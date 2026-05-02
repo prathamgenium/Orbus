@@ -10,7 +10,17 @@ app = Flask(__name__)
 groq_client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 twilio_client = Client(os.environ.get("TWILIO_SID"), os.environ.get("TWILIO_TOKEN"))
 
-appointments_db = []
+DATA_FILE = "data.json"
+
+def load_bookings():
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "r") as f:
+            return json.load(f)
+    return []
+
+def save_bookings(bookings):
+    with open(DATA_FILE, "w") as f:
+        json.dump(bookings, f)
 
 SYSTEM_PROMPT = "You are Orbus, a clinic receptionist AI. NEVER give medical advice. ONLY handle clinic bookings. Keep replies under 3 sentences. You must reply in JSON with keys: reply, intent, name, date, time."
 
@@ -34,12 +44,13 @@ def ai_reply(user_msg, context=""):
 
 @app.route("/webhook", methods=["POST"])
 def receive():
-    global appointments_db
     incoming_msg = request.form.get('Body', '').strip()
     sender_phone = request.form.get('From', '').replace("whatsapp:", "")
     
     if not incoming_msg:
         return "OK", 200
+
+    appointments_db = load_bookings()
 
     context = ""
     past = [a for a in appointments_db if a['phone'] == sender_phone]
@@ -58,6 +69,7 @@ def receive():
     if intent == "book" and name and date and time:
         booking = {"name": name, "phone": sender_phone, "date": date, "time": time}
         appointments_db.append(booking)
+        save_bookings(appointments_db)
         reply_text = "Booked! Name: " + name + ", Date: " + date + ", Time: " + time + ". Arrive 10 mins early."
 
     resp = MessagingResponse()
@@ -66,7 +78,7 @@ def receive():
 
 @app.route("/bookings")
 def view_bookings():
-    return {"appointments": appointments_db}
+    return {"appointments": load_bookings()}
 
 if __name__ == "__main__":
     port = int(os.environ.get('PORT', 5000))
